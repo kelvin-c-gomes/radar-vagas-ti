@@ -11,7 +11,7 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ARQUIVO_MEMORIA = "vagas_vistas.json"
 
-# Buscas cirúrgicas apenas em plataformas reais de RH e empresas de Marília/SP
+# Buscas cirúrgicas em plataformas reais de RH e empresas de Marília/SP
 QUERIES_BUSCA = [
     'site:linkedin.com/jobs/view "estágio" ("TI" OR "desenvolvimento" OR "software" OR "dados") "remoto"',
     'site:gupy.io "estágio" ("tecnologia" OR "desenvolvimento" OR "dados" OR "sistemas") "remoto"',
@@ -20,7 +20,7 @@ QUERIES_BUSCA = [
     '(site:gupy.io OR site:linkedin.com/jobs) ("TOTVS" OR "Tray" OR "Senior" OR "Life") "estágio" "Marília"'
 ]
 
-# Bloqueia sites que só geram link velho ou spam
+# Bloqueia redes sociais e agregadores que só geram link velho ou spam
 DOMINIOS_BLOQUEADOS = [
     "instagram.com", "facebook.com", "tiktok.com", "youtube.com",
     "jobgether.com", "jooble.org", "bebee.com", "adzuna.com.br", "talent.com"
@@ -59,13 +59,14 @@ def buscar_vagas_google(vagas_vistas):
             "gl": "br",
             "hl": "pt-br",
             "num": 15,
-            "tbs": "qdr:w"  # Apenas últimos 7 dias (corta vagas velhas de 1 ano atrás)
+            "tbs": "qdr:m"  # Últimos 30 dias: tempo ideal para o Google indexar Gupy e LinkedIn
         }
         
         try:
             resposta = requests.post(url, headers=headers, json=payload, timeout=15)
             if resposta.status_code == 200:
                 resultados = resposta.json().get("organic", [])
+                print(f"Query '{query[:30]}...' -> {len(resultados)} resultados")
                 for item in resultados:
                     link = item.get("link")
                     if link and link not in vagas_vistas and link_valido(link):
@@ -74,7 +75,7 @@ def buscar_vagas_google(vagas_vistas):
                             "titulo": item.get("title", ""),
                             "link": link,
                             "resumo": item.get("snippet", ""),
-                            "data": item.get("date", "Esta semana")
+                            "data": item.get("date", "Recente")
                         })
         except Exception as e:
             print(f"Erro na busca: {e}")
@@ -110,11 +111,12 @@ def filtrar_com_gemini(vagas_brutas):
     
     prompt = f"""
     Você é um filtro automatizado de vagas de estágio em TI para um estudante de ADS de Marília-SP.
-    Analise os links reais encontrados nos últimos 7 dias e selecione NO MÁXIMO AS 5 MELHORES oportunidades legítimas.
+    Analise os links reais encontrados e selecione NO MÁXIMO AS 5 MELHORES oportunidades legítimas.
 
     Regras rígidas:
     - NÃO escreva saudação, introdução, despedida ou dicas. Entregue APENAS a lista de vagas.
-    - Descarte vagas que pareçam expiradas, links genéricos de busca sem vaga específica, vagas de nível Pleno/Sênior ou fora da área de TI.
+    - Descarte vagas que mencionem datas antigas (2024 ou 2025), vagas encerradas, vagas Pleno/Sênior ou fora de TI.
+    - Aceite links diretos de vagas (LinkedIn, Gupy, Greenhouse, Sólides, Vagas.com, CIEE, InfoJobs) e páginas ativas de recrutamento de empresas de Marília/SP.
     - Priorize 100% qualquer vaga em MARÍLIA - SP no topo.
 
     Formato obrigatório:
@@ -130,10 +132,10 @@ def filtrar_com_gemini(vagas_brutas):
       📌 [Tecnologias/Resumo em 1 linha]
       🔗 [URL exata]
 
-    Se nenhuma vaga real e legítima restar após o filtro, responda apenas: NENHUMA
+    Se absolutamente NENHUMA vaga passar, responda apenas: NENHUMA
 
     Vagas encontradas:
-    {json.dumps(vagas_brutas[:40], ensure_ascii=False, indent=2)}
+    {json.dumps(vagas_brutas[:45], ensure_ascii=False, indent=2)}
     """
 
     modelos = obter_modelos_ativos(client)
@@ -157,7 +159,7 @@ def enviar_telegram(mensagem):
     for i in range(0, len(mensagem), 3900):
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
-            "text": f"🎯 Radar de Estágios TI (Últimos 7 dias)\n\n{mensagem[i:i+3900]}",
+            "text": f"🎯 Radar de Estágios TI\n\n{mensagem[i:i+3900]}",
             "disable_web_page_preview": True
         }
         requests.post(url, json=payload, timeout=15)
@@ -166,11 +168,16 @@ def enviar_telegram(mensagem):
 def main():
     vagas_vistas = carregar_memoria()
     novas_vagas, vagas_vistas_atualizadas = buscar_vagas_google(vagas_vistas)
+    print(f"Total de links válidos inéditos: {len(novas_vagas)}")
     
     if novas_vagas:
         relatorio = filtrar_com_gemini(novas_vagas)
         if relatorio:
             enviar_telegram(relatorio)
+        else:
+            enviar_telegram(f"🤖 Varredura feita ({len(novas_vagas)} links analisados), mas nenhuma vaga nova passou no filtro.")
+    else:
+        enviar_telegram("🤖 Varredura feita: 0 links novos encontrados nesta rodada.")
             
     salvar_memoria(vagas_vistas_atualizadas)
 
