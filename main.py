@@ -10,10 +10,12 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ARQUIVO_MEMORIA = "vagas_vistas.json"
 
+# Buscas ampliadas cobrindo os principais portais de estágio e tech do Brasil
 QUERIES_BUSCA = [
     '("estágio" OR "estagiário") ("TI" OR "desenvolvimento" OR "software" OR "dados") ("remoto" OR "home office")',
-    'site:gupy.io ("estágio" OR "estagiário") ("tecnologia" OR "desenvolvedor" OR "sistemas") ("remoto" OR "home office")',
-    'site:linkedin.com/jobs ("estágio" OR "estagiário") ("TI" OR "programação" OR "web" OR "python" OR "php") "remoto"'
+    'site:gupy.io ("estágio" OR "estagiário") ("tecnologia" OR "desenvolvedor" OR "sistemas" OR "dados") ("remoto" OR "home office")',
+    'site:linkedin.com/jobs ("estágio" OR "estagiário") ("TI" OR "programação" OR "web" OR "python" OR "php") "remoto"',
+    '(site:ciee.org.br OR site:solides.com.br OR site:greenhouse.io OR site:vagas.com.br) ("estágio" OR "estagiário") ("TI" OR "tecnologia" OR "sistemas") ("remoto" OR "home office")'
 ]
 
 
@@ -43,14 +45,16 @@ def buscar_vagas_google(vagas_vistas):
             "q": query,
             "gl": "br",
             "hl": "pt-br",
-            "num": 15,
-            "tbs": "qdr:d"
+            "num": 20,
+            "tbs": "qdr:w"  # Últimos 7 dias (garante volume bom de vagas reais)
         }
         
         try:
             resposta = requests.post(url, headers=headers, json=payload, timeout=15)
+            print(f"Status Serper: {resposta.status_code}")
             if resposta.status_code == 200:
                 resultados = resposta.json().get("organic", [])
+                print(f"Resultados retornados nesta query: {len(resultados)}")
                 for item in resultados:
                     link = item.get("link")
                     if link and link not in vagas_vistas:
@@ -61,8 +65,10 @@ def buscar_vagas_google(vagas_vistas):
                             "resumo": item.get("snippet", ""),
                             "data": item.get("date", "Recente")
                         })
+            else:
+                print(f"Erro na API Serper: {resposta.text}")
         except Exception as e:
-            print(f"Erro na busca da query '{query}': {e}")
+            print(f"Exceção na busca: {e}")
             
     return novas_vagas, vagas_vistas
 
@@ -75,17 +81,17 @@ def filtrar_com_gemini(vagas_brutas):
     
     prompt = f"""
     Você é um recrutador especialista em tecnologia filtrando oportunidades para um estudante de Análise e Desenvolvimento de Sistemas (ADS).
-    Analise a lista de resultados de busca abaixo e selecione APENAS vagas reais e ativas de ESTÁGIO em TI/Tecnologia que sejam REMOTAS (home office) ou híbridas flexíveis.
+    Analise a lista de resultados de busca abaixo e selecione vagas reais e ativas de ESTÁGIO em TI/Tecnologia que sejam REMOTAS (home office) ou híbridas.
 
-    Regras rígidas de descarte:
-    - Descarte artigos de blog, notícias, cursos, vídeos ou páginas genéricas de pesquisa sem uma vaga específica.
-    - Descarte vagas efetivas (Júnior, Pleno, Sênior) ou que exijam experiência profissional prévia.
-    - Descarte vagas claramente 100% presenciais fora de Marília/SP.
+    Regras de filtro:
+    - Aceite vagas de estágio em desenvolvimento (web, backend, frontend, mobile), dados, QA, suporte técnico, infraestrutura, segurança ou IA.
+    - Descarte artigos de blog, cursos, vídeos ou vagas claramente Sênior/Pleno.
+    - Caso o título ou resumo indique estágio em TI remoto (mesmo que seja uma página de portal de vagas), aprove.
 
-    Para cada vaga aprovada, formate exatamente neste padrão:
-    🔹 *[Título da Vaga / Empresa]*
-    📌 *Área/Stack:* [Resumo curto das tecnologias ou área]
-    🔗 *Link:* [URL exata]
+    Para cada vaga aprovada, formate exatamente neste padrão (sem usar caracteres especiais quebrados):
+    🔹 { "[Título da Vaga / Empresa]" }
+    📌 Área/Stack: [Resumo curto das tecnologias ou área]
+    🔗 Link: [URL exata]
 
     Se NENHUMA vaga passar no filtro, responda apenas a palavra: NENHUMA
 
@@ -93,15 +99,18 @@ def filtrar_com_gemini(vagas_brutas):
     {json.dumps(vagas_brutas, ensure_ascii=False, indent=2)}
     """
 
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=prompt,
-    )
-    
-    texto = response.text.strip()
-    if texto == "NENHUMA" or not texto:
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt,
+        )
+        texto = response.text.strip()
+        if texto == "NENHUMA" or not texto:
+            return None
+        return texto
+    except Exception as e:
+        print(f"Erro na chamada do Gemini: {e}")
         return None
-    return texto
 
 
 def enviar_telegram(mensagem):
@@ -109,11 +118,11 @@ def enviar_telegram(mensagem):
     for i in range(0, len(mensagem), 3900):
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
-            "text": f"🚀 *Novas Vagas de Estágio Remoto (TI)*\n\n{mensagem[i:i+3900]}",
-            "parse_mode": "Markdown",
+            "text": f"🚀 Novas Vagas de Estágio Remoto (TI)\n\n{mensagem[i:i+3900]}",
             "disable_web_page_preview": True
         }
-        requests.post(url, json=payload, timeout=15)
+        resp = requests.post(url, json=payload, timeout=15)
+        print(f"Status envio Telegram: {resp.status_code} | Resposta: {resp.text}")
 
 
 def main():
@@ -121,7 +130,7 @@ def main():
     vagas_vistas = carregar_memoria()
     novas_vagas, vagas_vistas_atualizadas = buscar_vagas_google(vagas_vistas)
     
-    print(f"Links inéditos encontrados: {len(novas_vagas)}")
+    print(f"Total de links inéditos encontrados: {len(novas_vagas)}")
     
     if novas_vagas:
         relatorio = filtrar_com_gemini(novas_vagas)
@@ -130,6 +139,10 @@ def main():
             enviar_telegram(relatorio)
         else:
             print("Nenhuma vaga passou no filtro do Gemini.")
+            enviar_telegram("🤖 Teste do Robô: A busca funcionou, mas nenhuma vaga passou no filtro desta rodada.")
+    else:
+        print("Nenhum link novo encontrado.")
+        enviar_telegram("⚠️ Teste do Robô: A busca retornou 0 links. Verifique a SERPER_API_KEY nos Secrets do GitHub.")
             
     salvar_memoria(vagas_vistas_atualizadas)
     print("Varredura concluída.")
