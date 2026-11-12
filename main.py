@@ -11,7 +11,7 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ARQUIVO_MEMORIA = "vagas_vistas.json"
 
-# Buscas cirúrgicas em plataformas reais de RH e empresas de Marília/SP
+# Aqui é para fazer buscas em empresas de Marília-SP e também buscar por estágios remoto de TI em todo o Brasil.
 QUERIES_BUSCA = [
     'site:linkedin.com/jobs/view "estágio" ("TI" OR "desenvolvimento" OR "software" OR "dados") "remoto"',
     'site:gupy.io "estágio" ("tecnologia" OR "desenvolvimento" OR "dados" OR "sistemas") "remoto"',
@@ -20,7 +20,7 @@ QUERIES_BUSCA = [
     '(site:gupy.io OR site:linkedin.com/jobs) ("TOTVS" OR "Tray" OR "Senior" OR "Life") "estágio" "Marília"'
 ]
 
-# Bloqueia redes sociais e agregadores que só geram link velho ou spam
+# Aqui ele bloqueia todos os dominios que possam gerar spam e links antigos
 DOMINIOS_BLOQUEADOS = [
     "instagram.com", "facebook.com", "tiktok.com", "youtube.com",
     "jobgether.com", "jooble.org", "bebee.com", "adzuna.com.br", "talent.com"
