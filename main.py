@@ -11,13 +11,19 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ARQUIVO_MEMORIA = "vagas_vistas.json"
 
+# Buscas cirúrgicas apenas em plataformas reais de RH e empresas de Marília/SP
 QUERIES_BUSCA = [
-    'vaga estagio TI remoto home office',
-    'vaga estagio desenvolvimento software remoto',
-    'site:gupy.io estagio tecnologia remoto',
-    'site:linkedin.com/jobs estagio TI remoto',
-    'vaga estagio TI tecnologia informatica "Marilia"',
-    'estagio desenvolvimento sistemas "Marilia" SP'
+    'site:linkedin.com/jobs/view "estágio" ("TI" OR "desenvolvimento" OR "software" OR "dados") "remoto"',
+    'site:gupy.io "estágio" ("tecnologia" OR "desenvolvimento" OR "dados" OR "sistemas") "remoto"',
+    '(site:greenhouse.io OR site:lever.co OR site:solides.com.br OR site:vagas.com.br) "estágio" ("TI" OR "desenvolvimento" OR "software") "remoto"',
+    '("estágio" OR "estagiário") ("TI" OR "tecnologia" OR "sistemas" OR "desenvolvimento") "Marília" -site:instagram.com -site:facebook.com',
+    '(site:gupy.io OR site:linkedin.com/jobs) ("TOTVS" OR "Tray" OR "Senior" OR "Life") "estágio" "Marília"'
+]
+
+# Bloqueia sites que só geram link velho ou spam
+DOMINIOS_BLOQUEADOS = [
+    "instagram.com", "facebook.com", "tiktok.com", "youtube.com",
+    "jobgether.com", "jooble.org", "bebee.com", "adzuna.com.br", "talent.com"
 ]
 
 
@@ -31,6 +37,11 @@ def carregar_memoria():
 def salvar_memoria(vagas_vistas):
     with open(ARQUIVO_MEMORIA, "w", encoding="utf-8") as f:
         json.dump(list(vagas_vistas), f, indent=2, ensure_ascii=False)
+
+
+def link_valido(url):
+    url_lower = url.lower()
+    return not any(dominio in url_lower for dominio in DOMINIOS_BLOQUEADOS)
 
 
 def buscar_vagas_google(vagas_vistas):
@@ -48,7 +59,7 @@ def buscar_vagas_google(vagas_vistas):
             "gl": "br",
             "hl": "pt-br",
             "num": 15,
-            "tbs": "qdr:m"
+            "tbs": "qdr:w"  # Apenas últimos 7 dias (corta vagas velhas de 1 ano atrás)
         }
         
         try:
@@ -57,12 +68,13 @@ def buscar_vagas_google(vagas_vistas):
                 resultados = resposta.json().get("organic", [])
                 for item in resultados:
                     link = item.get("link")
-                    if link and link not in vagas_vistas:
+                    if link and link not in vagas_vistas and link_valido(link):
                         vagas_vistas.add(link)
                         novas_vagas.append({
                             "titulo": item.get("title", ""),
                             "link": link,
-                            "resumo": item.get("snippet", "")
+                            "resumo": item.get("snippet", ""),
+                            "data": item.get("date", "Esta semana")
                         })
         except Exception as e:
             print(f"Erro na busca: {e}")
@@ -78,10 +90,9 @@ def obter_modelos_ativos(client):
             acoes = getattr(m, "supported_generation_methods", []) or getattr(m, "supported_actions", [])
             if "flash" in nome.lower() and ("generateContent" in str(acoes) or not acoes):
                 modelos_validos.append(nome)
-    except Exception as e:
-        print(f"Erro ao listar modelos: {e}")
+    except Exception:
+        pass
     
-    # Garante ordem de prioridade e fallback
     prioridade = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3-flash-preview"]
     ordenados = [m for m in prioridade if m in modelos_validos]
     for m in modelos_validos:
@@ -98,46 +109,47 @@ def filtrar_com_gemini(vagas_brutas):
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
-    Você é um assistente de carreira para um estudante de Análise e Desenvolvimento de Sistemas (ADS) de MARÍLIA - SP.
-    Abaixo está uma lista de links encontrados agora no Google sobre estágios em TI.
-    
-    Sua tarefa é selecionar NO MÁXIMO AS 5 MELHORES oportunidades reais da lista (priorizando sempre vagas em Marília/SP primeiro, e depois as melhores vagas 100% remotas em desenvolvimento/TI).
-    - Descarte APENAS notícias, artigos de blog ("como conseguir estágio"), cursos pagos ou vagas Sênior/Pleno.
+    Você é um filtro automatizado de vagas de estágio em TI para um estudante de ADS de Marília-SP.
+    Analise os links reais encontrados nos últimos 7 dias e selecione NO MÁXIMO AS 5 MELHORES oportunidades legítimas.
 
-    Formatação obrigatória:
-    - Se houver qualquer oportunidade em MARÍLIA - SP (presencial, híbrida ou remota), coloque NO TOPO com este destaque:
-      🚨🔥 OPORTUNIDADE EM MARÍLIA/SP! 🔥🚨
-      🏙️ [Título / Empresa ou Portal]
-      📍 Modalidade: [Presencial / Híbrido / Remoto - Marília/SP]
-      📌 Detalhes: [Resumo curto]
-      🔗 Link: [URL exata]
+    Regras rígidas:
+    - NÃO escreva saudação, introdução, despedida ou dicas. Entregue APENAS a lista de vagas.
+    - Descarte vagas que pareçam expiradas, links genéricos de busca sem vaga específica, vagas de nível Pleno/Sênior ou fora da área de TI.
+    - Priorize 100% qualquer vaga em MARÍLIA - SP no topo.
 
-    - Para as demais oportunidades remotas em TI:
-      🔹 [Título / Empresa ou Portal]
-      📌 Detalhes: [Resumo curto]
-      🔗 Link: [URL exata]
+    Formato obrigatório:
+    - Se for em MARÍLIA - SP:
+      🚨🔥 VAGA EM MARÍLIA/SP! 🔥🚨
+      🏢 [Cargo] | [Empresa]
+      📍 [Presencial / Híbrido / Remoto - Marília/SP]
+      📌 [Tecnologias/Resumo em 1 linha]
+      🔗 [URL exata]
 
-    Lista de resultados:
-    {json.dumps(vagas_brutas[:50], ensure_ascii=False, indent=2)}
+    - Se for REMOTA (Brasil):
+      🔹 [Cargo] | [Empresa]
+      📌 [Tecnologias/Resumo em 1 linha]
+      🔗 [URL exata]
+
+    Se nenhuma vaga real e legítima restar após o filtro, responda apenas: NENHUMA
+
+    Vagas encontradas:
+    {json.dumps(vagas_brutas[:40], ensure_ascii=False, indent=2)}
     """
 
     modelos = obter_modelos_ativos(client)
-    print(f"Modelos disponíveis na sua chave: {modelos}")
-    ultimo_erro = ""
-
     for modelo in modelos:
         try:
             response = client.models.generate_content(
                 model=modelo,
                 contents=prompt,
             )
-            return response.text.strip()
+            texto = response.text.strip()
+            return None if texto == "NENHUMA" else texto
         except Exception as e:
-            ultimo_erro = str(e)
             print(f"Falha no modelo {modelo}: {e}")
             time.sleep(2)
 
-    return f"⚠️ Nenhum modelo respondeu agora. Modelos testados: {modelos}. Último erro: {ultimo_erro}"
+    return None
 
 
 def enviar_telegram(mensagem):
@@ -145,7 +157,7 @@ def enviar_telegram(mensagem):
     for i in range(0, len(mensagem), 3900):
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
-            "text": f"🚀 Radar de Estágios TI\n\n{mensagem[i:i+3900]}",
+            "text": f"🎯 Radar de Estágios TI (Últimos 7 dias)\n\n{mensagem[i:i+3900]}",
             "disable_web_page_preview": True
         }
         requests.post(url, json=payload, timeout=15)
@@ -159,8 +171,6 @@ def main():
         relatorio = filtrar_com_gemini(novas_vagas)
         if relatorio:
             enviar_telegram(relatorio)
-    else:
-        enviar_telegram("⚠️ Nenhum link inédito nesta rodada (todos já estão em vagas_vistas.json).")
             
     salvar_memoria(vagas_vistas_atualizadas)
 
