@@ -70,6 +70,27 @@ def buscar_vagas_google(vagas_vistas):
     return novas_vagas, vagas_vistas
 
 
+def obter_modelos_ativos(client):
+    modelos_validos = []
+    try:
+        for m in client.models.list():
+            nome = m.name.replace("models/", "")
+            acoes = getattr(m, "supported_generation_methods", []) or getattr(m, "supported_actions", [])
+            if "flash" in nome.lower() and ("generateContent" in str(acoes) or not acoes):
+                modelos_validos.append(nome)
+    except Exception as e:
+        print(f"Erro ao listar modelos: {e}")
+    
+    # Garante ordem de prioridade e fallback
+    prioridade = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3-flash-preview"]
+    ordenados = [m for m in prioridade if m in modelos_validos]
+    for m in modelos_validos:
+        if m not in ordenados:
+            ordenados.append(m)
+            
+    return ordenados if ordenados else prioridade
+
+
 def filtrar_com_gemini(vagas_brutas):
     if not vagas_brutas:
         return None
@@ -100,23 +121,23 @@ def filtrar_com_gemini(vagas_brutas):
     {json.dumps(vagas_brutas[:50], ensure_ascii=False, indent=2)}
     """
 
-    modelos = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3-flash"]
+    modelos = obter_modelos_ativos(client)
+    print(f"Modelos disponíveis na sua chave: {modelos}")
     ultimo_erro = ""
 
     for modelo in modelos:
-        for tentativa in range(2):
-            try:
-                response = client.models.generate_content(
-                    model=modelo,
-                    contents=prompt,
-                )
-                return response.text.strip()
-            except Exception as e:
-                ultimo_erro = str(e)
-                print(f"Falha no modelo {modelo} (tentativa {tentativa+1}): {e}")
-                time.sleep(3)
+        try:
+            response = client.models.generate_content(
+                model=modelo,
+                contents=prompt,
+            )
+            return response.text.strip()
+        except Exception as e:
+            ultimo_erro = str(e)
+            print(f"Falha no modelo {modelo}: {e}")
+            time.sleep(2)
 
-    return f"⚠️ Todos os modelos do Gemini estão sobrecarregados no momento. Último erro: {ultimo_erro}"
+    return f"⚠️ Nenhum modelo respondeu agora. Modelos testados: {modelos}. Último erro: {ultimo_erro}"
 
 
 def enviar_telegram(mensagem):
