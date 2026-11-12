@@ -17,7 +17,7 @@ QUERIES_BUSCA = [
     'site:gupy.io estagio tecnologia remoto',
     'site:linkedin.com/jobs estagio TI remoto',
     'vaga estagio TI tecnologia informatica "Marilia"',
-    'estagio desenvolvimento sistemas "Marilia" SP'
+    'estagio TI "Marilia" SP'
 ]
 
 
@@ -86,7 +86,7 @@ def filtrar_com_gemini(vagas_brutas):
     Analise a lista de resultados de busca abaixo e selecione oportunidades reais de ESTÁGIO em TI/Tecnologia.
 
     Critérios de aprovação:
-    1. PRIORIDADE MÁXIMA (MARÍLIA/SP): Qualquer vaga de estágio em TI, desenvolvimento, suporte, dados ou sistemas localizada em MARÍLIA - SP (seja presencial, híbrida ou remota).
+    1. PRIORIDADE MÁXIMA (MARÍLIA/SP): Qualquer vaga de estágio em TI, desenvolvimento, suporte, QA, dados ou sistemas localizada em MARÍLIA - SP (seja presencial, híbrida ou remota).
     2. REMOTAS (BRASIL): Vagas de estágio em TI/Tecnologia que sejam 100% REMOTAS (home office) ou híbridas flexíveis.
     3. Aceite tanto links de vagas individuais quanto páginas ativas de portais (Gupy, LinkedIn, CIEE, InfoJobs, Vagas.com) que listem vagas abertas de estágio em TI no perfil acima.
     4. Descarte apenas artigos de blog, cursos pagos, notícias ou vagas claramente Sênior/Pleno.
@@ -112,7 +112,7 @@ def filtrar_com_gemini(vagas_brutas):
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=prompt,
         )
         texto = response.text.strip()
