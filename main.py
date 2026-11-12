@@ -10,13 +10,14 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ARQUIVO_MEMORIA = "vagas_vistas.json"
 
-# Buscas diretas e naturais (muito mais eficientes no Google/Serper)
+# Inclui buscas remotas nacionais + busca dedicada para Marília/SP
 QUERIES_BUSCA = [
     'vaga estagio TI remoto home office',
     'vaga estagio desenvolvimento software remoto',
     'site:gupy.io estagio tecnologia remoto',
     'site:linkedin.com/jobs estagio TI remoto',
-    'site:ciee.org.br estagio tecnologia informacao'
+    'vaga estagio TI tecnologia informatica "Marilia"',
+    'estagio desenvolvimento sistemas "Marilia" SP'
 ]
 
 
@@ -47,7 +48,7 @@ def buscar_vagas_google(vagas_vistas):
             "gl": "br",
             "hl": "pt-br",
             "num": 20,
-            "tbs": "qdr:m"  # Último mês (pega todas as vagas abertas recentes sem cortar nada)
+            "tbs": "qdr:m"
         }
         
         try:
@@ -81,20 +82,29 @@ def filtrar_com_gemini(vagas_brutas):
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
-    Você é um recrutador especialista em tecnologia filtrando oportunidades para um estudante de Análise e Desenvolvimento de Sistemas (ADS).
-    Analise a lista de resultados de busca abaixo e selecione vagas reais de ESTÁGIO em TI/Tecnologia que sejam REMOTAS (home office) ou híbridas.
+    Você é um recrutador especialista em tecnologia filtrando oportunidades para um estudante de Análise e Desenvolvimento de Sistemas (ADS) que mora em MARÍLIA - SP.
+    Analise a lista de resultados de busca abaixo e selecione oportunidades reais de ESTÁGIO em TI/Tecnologia.
 
-    Regras de filtro:
-    - Aceite vagas de estágio em desenvolvimento (web, backend, frontend, mobile), dados, QA, suporte técnico, infraestrutura, segurança ou IA.
-    - Descarte artigos de blog, cursos, vídeos ou vagas claramente Sênior/Pleno.
-    - Seja prático: se o resultado aponta para uma vaga ou lista ativa de estágio remoto em TI, aprove.
+    Critérios de aprovação:
+    1. PRIORIDADE MÁXIMA (MARÍLIA/SP): Qualquer vaga de estágio em TI, desenvolvimento, suporte, dados ou sistemas localizada em MARÍLIA - SP (seja presencial, híbrida ou remota).
+    2. REMOTAS (BRASIL): Vagas de estágio em TI/Tecnologia que sejam 100% REMOTAS (home office) ou híbridas flexíveis.
+    3. Aceite tanto links de vagas individuais quanto páginas ativas de portais (Gupy, LinkedIn, CIEE, InfoJobs, Vagas.com) que listem vagas abertas de estágio em TI no perfil acima.
+    4. Descarte apenas artigos de blog, cursos pagos, notícias ou vagas claramente Sênior/Pleno.
 
-    Para cada vaga aprovada, formate exatamente neste padrão:
-    🔹 [Título da Vaga / Empresa]
-    📌 Área/Stack: [Resumo curto das tecnologias ou área]
-    🔗 Link: [URL exata]
+    Formatação obrigatória:
+    - Se a vaga for em MARÍLIA - SP (presencial, híbrida ou remota), coloque ela NO TOPO da lista com este destaque exato:
+      🚨🔥 OPORTUNIDADE EM MARÍLIA/SP! 🔥🚨
+      🏙️ [Título da Vaga / Empresa]
+      📍 Modalidade: [Presencial / Híbrido / Remoto - Marília/SP]
+      📌 Área/Stack: [Resumo curto]
+      🔗 Link: [URL exata]
 
-    Se NENHUMA vaga passar no filtro, responda apenas a palavra: NENHUMA
+    - Para as demais vagas remotas fora de Marília, use este padrão:
+      🔹 [Título da Vaga / Empresa]
+      📌 Área/Stack: [Resumo curto]
+      🔗 Link: [URL exata]
+
+    Se absolutamente NENHUMA oportunidade passar no filtro, responda apenas: NENHUMA
 
     Lista de resultados encontrados:
     {json.dumps(vagas_brutas, ensure_ascii=False, indent=2)}
@@ -102,16 +112,17 @@ def filtrar_com_gemini(vagas_brutas):
 
     try:
         response = client.models.generate_content(
-            model="gemini-3.8-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
         texto = response.text.strip()
+        print(f"Resposta bruta do Gemini (primeiros 200 chars): {texto[:200]}")
         if texto == "NENHUMA" or not texto:
             return None
         return texto
     except Exception as e:
-        print(f"Erro na chamada do Gemini: {e}")
-        return None
+        print(f"ERRO CRÍTICO NA API DO GEMINI: {e}")
+        return f"⚠️ Erro na API do Gemini: {e}"
 
 
 def enviar_telegram(mensagem):
@@ -119,7 +130,7 @@ def enviar_telegram(mensagem):
     for i in range(0, len(mensagem), 3900):
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
-            "text": f"🚀 Novas Vagas de Estágio Remoto (TI)\n\n{mensagem[i:i+3900]}",
+            "text": f"🚀 Radar de Estágios TI\n\n{mensagem[i:i+3900]}",
             "disable_web_page_preview": True
         }
         resp = requests.post(url, json=payload, timeout=15)
@@ -136,14 +147,13 @@ def main():
     if novas_vagas:
         relatorio = filtrar_com_gemini(novas_vagas)
         if relatorio:
-            print("Vagas relevantes filtradas! Enviando no Telegram...")
+            print("Enviando relatório no Telegram...")
             enviar_telegram(relatorio)
         else:
             print("Nenhuma vaga passou no filtro do Gemini.")
-            enviar_telegram("🤖 Busca concluída: encontrou links, mas o Gemini descartou todos. Verifique o log.")
+            enviar_telegram("🤖 Busca concluída: encontrou links, mas o Gemini descartou todos.")
     else:
         print("Nenhum link novo encontrado.")
-        enviar_telegram("⚠️ A busca retornou 0 links mesmo com filtro mensal.")
             
     salvar_memoria(vagas_vistas_atualizadas)
     print("Varredura concluída.")
