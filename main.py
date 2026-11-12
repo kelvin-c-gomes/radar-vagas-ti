@@ -16,8 +16,9 @@ QUERIES_BUSCA = [
     'site:linkedin.com/jobs/view "estágio" ("TI" OR "desenvolvimento" OR "software" OR "dados") "remoto"',
     'site:gupy.io "estágio" ("tecnologia" OR "desenvolvimento" OR "dados" OR "sistemas") "remoto"',
     '(site:greenhouse.io OR site:lever.co OR site:solides.com.br OR site:vagas.com.br) "estágio" ("TI" OR "desenvolvimento" OR "software") "remoto"',
-    '("estágio" OR "estagiário") ("TI" OR "tecnologia" OR "sistemas" OR "desenvolvimento") "Marília" -site:instagram.com -site:facebook.com',
-    '(site:gupy.io OR site:linkedin.com/jobs) ("TOTVS" OR "Tray" OR "Senior" OR "Life") "estágio" "Marília"'
+    '("estágio" OR "estagiário") ("TI" OR "tecnologia" OR "sistemas" OR "desenvolvimento" OR "suporte") ("Marília" OR "Pompeia") -site:instagram.com -site:facebook.com',
+    '(site:gupy.io OR site:linkedin.com/jobs OR site:ciee.org.br) ("Tray" OR "TOTVS" OR "Senior" OR "Life" OR "Dori" OR "Marilan" OR "Jacto" OR "Unimar") ("estágio" OR "estagiário") ("TI" OR "tecnologia" OR "desenvolvimento" OR "sistemas" OR "dados")'
+]
 ]
 
 # Aqui ele bloqueia todos os dominios que possam gerar spam e links antigos
