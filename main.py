@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import requests
 from google import genai
 
@@ -79,9 +80,8 @@ def filtrar_com_gemini(vagas_brutas):
     Você é um assistente de carreira para um estudante de Análise e Desenvolvimento de Sistemas (ADS) de MARÍLIA - SP.
     Abaixo está uma lista de links encontrados agora no Google sobre estágios em TI.
     
-    Sua tarefa é selecionar as 10 MELHORES oportunidades reais da lista (sejam vagas individuais ou links diretos para painéis de vagas abertas no LinkedIn, Gupy, CIEE, InfoJobs, Catho, Indeed, etc.).
+    Sua tarefa é selecionar NO MÁXIMO AS 5 MELHORES oportunidades reais da lista (priorizando sempre vagas em Marília/SP primeiro, e depois as melhores vagas 100% remotas em desenvolvimento/TI).
     - Descarte APENAS notícias, artigos de blog ("como conseguir estágio"), cursos pagos ou vagas Sênior/Pleno.
-    - NÃO responda NENHUMA se houver pelo menos 1 link de vaga ou portal de vagas de estágio em TI.
 
     Formatação obrigatória:
     - Se houver qualquer oportunidade em MARÍLIA - SP (presencial, híbrida ou remota), coloque NO TOPO com este destaque:
@@ -100,14 +100,23 @@ def filtrar_com_gemini(vagas_brutas):
     {json.dumps(vagas_brutas[:50], ensure_ascii=False, indent=2)}
     """
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt,
-        )
-        return response.text.strip()
-    except Exception as e:
-        return f"⚠️ Erro na API do Gemini: {e}"
+    modelos = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3-flash"]
+    ultimo_erro = ""
+
+    for modelo in modelos:
+        for tentativa in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=modelo,
+                    contents=prompt,
+                )
+                return response.text.strip()
+            except Exception as e:
+                ultimo_erro = str(e)
+                print(f"Falha no modelo {modelo} (tentativa {tentativa+1}): {e}")
+                time.sleep(3)
+
+    return f"⚠️ Todos os modelos do Gemini estão sobrecarregados no momento. Último erro: {ultimo_erro}"
 
 
 def enviar_telegram(mensagem):
