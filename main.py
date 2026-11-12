@@ -10,14 +10,13 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ARQUIVO_MEMORIA = "vagas_vistas.json"
 
-# Inclui buscas remotas nacionais + busca dedicada para Marília/SP
 QUERIES_BUSCA = [
     'vaga estagio TI remoto home office',
     'vaga estagio desenvolvimento software remoto',
     'site:gupy.io estagio tecnologia remoto',
     'site:linkedin.com/jobs estagio TI remoto',
     'vaga estagio TI tecnologia informatica "Marilia"',
-    'estagio TI "Marilia" SP'
+    'estagio desenvolvimento sistemas "Marilia" SP'
 ]
 
 
@@ -47,16 +46,14 @@ def buscar_vagas_google(vagas_vistas):
             "q": query,
             "gl": "br",
             "hl": "pt-br",
-            "num": 20,
+            "num": 15,
             "tbs": "qdr:m"
         }
         
         try:
             resposta = requests.post(url, headers=headers, json=payload, timeout=15)
-            print(f"Query: '{query}' | Status: {resposta.status_code}")
             if resposta.status_code == 200:
                 resultados = resposta.json().get("organic", [])
-                print(f"-> Resultados encontrados: {len(resultados)}")
                 for item in resultados:
                     link = item.get("link")
                     if link and link not in vagas_vistas:
@@ -64,13 +61,10 @@ def buscar_vagas_google(vagas_vistas):
                         novas_vagas.append({
                             "titulo": item.get("title", ""),
                             "link": link,
-                            "resumo": item.get("snippet", ""),
-                            "data": item.get("date", "Recente")
+                            "resumo": item.get("snippet", "")
                         })
-            else:
-                print(f"Erro na API Serper: {resposta.text}")
         except Exception as e:
-            print(f"Exceção na busca: {e}")
+            print(f"Erro na busca: {e}")
             
     return novas_vagas, vagas_vistas
 
@@ -82,32 +76,28 @@ def filtrar_com_gemini(vagas_brutas):
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     prompt = f"""
-    Você é um recrutador especialista em tecnologia filtrando oportunidades para um estudante de Análise e Desenvolvimento de Sistemas (ADS) que mora em MARÍLIA - SP.
-    Analise a lista de resultados de busca abaixo e selecione oportunidades reais de ESTÁGIO em TI/Tecnologia.
-
-    Critérios de aprovação:
-    1. PRIORIDADE MÁXIMA (MARÍLIA/SP): Qualquer vaga de estágio em TI, desenvolvimento, suporte, QA, dados ou sistemas localizada em MARÍLIA - SP (seja presencial, híbrida ou remota).
-    2. REMOTAS (BRASIL): Vagas de estágio em TI/Tecnologia que sejam 100% REMOTAS (home office) ou híbridas flexíveis.
-    3. Aceite tanto links de vagas individuais quanto páginas ativas de portais (Gupy, LinkedIn, CIEE, InfoJobs, Vagas.com) que listem vagas abertas de estágio em TI no perfil acima.
-    4. Descarte apenas artigos de blog, cursos pagos, notícias ou vagas claramente Sênior/Pleno.
+    Você é um assistente de carreira para um estudante de Análise e Desenvolvimento de Sistemas (ADS) de MARÍLIA - SP.
+    Abaixo está uma lista de links encontrados agora no Google sobre estágios em TI.
+    
+    Sua tarefa é selecionar as 10 MELHORES oportunidades reais da lista (sejam vagas individuais ou links diretos para painéis de vagas abertas no LinkedIn, Gupy, CIEE, InfoJobs, Catho, Indeed, etc.).
+    - Descarte APENAS notícias, artigos de blog ("como conseguir estágio"), cursos pagos ou vagas Sênior/Pleno.
+    - NÃO responda NENHUMA se houver pelo menos 1 link de vaga ou portal de vagas de estágio em TI.
 
     Formatação obrigatória:
-    - Se a vaga for em MARÍLIA - SP (presencial, híbrida ou remota), coloque ela NO TOPO da lista com este destaque exato:
+    - Se houver qualquer oportunidade em MARÍLIA - SP (presencial, híbrida ou remota), coloque NO TOPO com este destaque:
       🚨🔥 OPORTUNIDADE EM MARÍLIA/SP! 🔥🚨
-      🏙️ [Título da Vaga / Empresa]
+      🏙️ [Título / Empresa ou Portal]
       📍 Modalidade: [Presencial / Híbrido / Remoto - Marília/SP]
-      📌 Área/Stack: [Resumo curto]
+      📌 Detalhes: [Resumo curto]
       🔗 Link: [URL exata]
 
-    - Para as demais vagas remotas fora de Marília, use este padrão:
-      🔹 [Título da Vaga / Empresa]
-      📌 Área/Stack: [Resumo curto]
+    - Para as demais oportunidades remotas em TI:
+      🔹 [Título / Empresa ou Portal]
+      📌 Detalhes: [Resumo curto]
       🔗 Link: [URL exata]
 
-    Se absolutamente NENHUMA oportunidade passar no filtro, responda apenas: NENHUMA
-
-    Lista de resultados encontrados:
-    {json.dumps(vagas_brutas, ensure_ascii=False, indent=2)}
+    Lista de resultados:
+    {json.dumps(vagas_brutas[:50], ensure_ascii=False, indent=2)}
     """
 
     try:
@@ -115,13 +105,8 @@ def filtrar_com_gemini(vagas_brutas):
             model="gemini-3.8-flash",
             contents=prompt,
         )
-        texto = response.text.strip()
-        print(f"Resposta bruta do Gemini (primeiros 200 chars): {texto[:200]}")
-        if texto == "NENHUMA" or not texto:
-            return None
-        return texto
+        return response.text.strip()
     except Exception as e:
-        print(f"ERRO CRÍTICO NA API DO GEMINI: {e}")
         return f"⚠️ Erro na API do Gemini: {e}"
 
 
@@ -133,30 +118,21 @@ def enviar_telegram(mensagem):
             "text": f"🚀 Radar de Estágios TI\n\n{mensagem[i:i+3900]}",
             "disable_web_page_preview": True
         }
-        resp = requests.post(url, json=payload, timeout=15)
-        print(f"Status envio Telegram: {resp.status_code}")
+        requests.post(url, json=payload, timeout=15)
 
 
 def main():
-    print("Iniciando varredura...")
     vagas_vistas = carregar_memoria()
     novas_vagas, vagas_vistas_atualizadas = buscar_vagas_google(vagas_vistas)
-    
-    print(f"Total de links inéditos encontrados: {len(novas_vagas)}")
     
     if novas_vagas:
         relatorio = filtrar_com_gemini(novas_vagas)
         if relatorio:
-            print("Enviando relatório no Telegram...")
             enviar_telegram(relatorio)
-        else:
-            print("Nenhuma vaga passou no filtro do Gemini.")
-            enviar_telegram("🤖 Busca concluída: encontrou links, mas o Gemini descartou todos.")
     else:
-        print("Nenhum link novo encontrado.")
+        enviar_telegram("⚠️ Nenhum link inédito nesta rodada (todos já estão em vagas_vistas.json).")
             
     salvar_memoria(vagas_vistas_atualizadas)
-    print("Varredura concluída.")
 
 
 if __name__ == "__main__":
