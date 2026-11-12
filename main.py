@@ -10,12 +10,13 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 ARQUIVO_MEMORIA = "vagas_vistas.json"
 
-# Buscas ampliadas cobrindo os principais portais de estágio e tech do Brasil
+# Buscas diretas e naturais (muito mais eficientes no Google/Serper)
 QUERIES_BUSCA = [
-    '("estágio" OR "estagiário") ("TI" OR "desenvolvimento" OR "software" OR "dados") ("remoto" OR "home office")',
-    'site:gupy.io ("estágio" OR "estagiário") ("tecnologia" OR "desenvolvedor" OR "sistemas" OR "dados") ("remoto" OR "home office")',
-    'site:linkedin.com/jobs ("estágio" OR "estagiário") ("TI" OR "programação" OR "web" OR "python" OR "php") "remoto"',
-    '(site:ciee.org.br OR site:solides.com.br OR site:greenhouse.io OR site:vagas.com.br) ("estágio" OR "estagiário") ("TI" OR "tecnologia" OR "sistemas") ("remoto" OR "home office")'
+    'vaga estagio TI remoto home office',
+    'vaga estagio desenvolvimento software remoto',
+    'site:gupy.io estagio tecnologia remoto',
+    'site:linkedin.com/jobs estagio TI remoto',
+    'site:ciee.org.br estagio tecnologia informacao'
 ]
 
 
@@ -46,15 +47,15 @@ def buscar_vagas_google(vagas_vistas):
             "gl": "br",
             "hl": "pt-br",
             "num": 20,
-            "tbs": "qdr:w"  # Últimos 7 dias (garante volume bom de vagas reais)
+            "tbs": "qdr:m"  # Último mês (pega todas as vagas abertas recentes sem cortar nada)
         }
         
         try:
             resposta = requests.post(url, headers=headers, json=payload, timeout=15)
-            print(f"Status Serper: {resposta.status_code}")
+            print(f"Query: '{query}' | Status: {resposta.status_code}")
             if resposta.status_code == 200:
                 resultados = resposta.json().get("organic", [])
-                print(f"Resultados retornados nesta query: {len(resultados)}")
+                print(f"-> Resultados encontrados: {len(resultados)}")
                 for item in resultados:
                     link = item.get("link")
                     if link and link not in vagas_vistas:
@@ -81,15 +82,15 @@ def filtrar_com_gemini(vagas_brutas):
     
     prompt = f"""
     Você é um recrutador especialista em tecnologia filtrando oportunidades para um estudante de Análise e Desenvolvimento de Sistemas (ADS).
-    Analise a lista de resultados de busca abaixo e selecione vagas reais e ativas de ESTÁGIO em TI/Tecnologia que sejam REMOTAS (home office) ou híbridas.
+    Analise a lista de resultados de busca abaixo e selecione vagas reais de ESTÁGIO em TI/Tecnologia que sejam REMOTAS (home office) ou híbridas.
 
     Regras de filtro:
     - Aceite vagas de estágio em desenvolvimento (web, backend, frontend, mobile), dados, QA, suporte técnico, infraestrutura, segurança ou IA.
     - Descarte artigos de blog, cursos, vídeos ou vagas claramente Sênior/Pleno.
-    - Caso o título ou resumo indique estágio em TI remoto (mesmo que seja uma página de portal de vagas), aprove.
+    - Seja prático: se o resultado aponta para uma vaga ou lista ativa de estágio remoto em TI, aprove.
 
-    Para cada vaga aprovada, formate exatamente neste padrão (sem usar caracteres especiais quebrados):
-    🔹 { "[Título da Vaga / Empresa]" }
+    Para cada vaga aprovada, formate exatamente neste padrão:
+    🔹 [Título da Vaga / Empresa]
     📌 Área/Stack: [Resumo curto das tecnologias ou área]
     🔗 Link: [URL exata]
 
@@ -122,7 +123,7 @@ def enviar_telegram(mensagem):
             "disable_web_page_preview": True
         }
         resp = requests.post(url, json=payload, timeout=15)
-        print(f"Status envio Telegram: {resp.status_code} | Resposta: {resp.text}")
+        print(f"Status envio Telegram: {resp.status_code}")
 
 
 def main():
@@ -139,10 +140,10 @@ def main():
             enviar_telegram(relatorio)
         else:
             print("Nenhuma vaga passou no filtro do Gemini.")
-            enviar_telegram("🤖 Teste do Robô: A busca funcionou, mas nenhuma vaga passou no filtro desta rodada.")
+            enviar_telegram("🤖 Busca concluída: encontrou links, mas o Gemini descartou todos. Verifique o log.")
     else:
         print("Nenhum link novo encontrado.")
-        enviar_telegram("⚠️ Teste do Robô: A busca retornou 0 links. Verifique a SERPER_API_KEY nos Secrets do GitHub.")
+        enviar_telegram("⚠️ A busca retornou 0 links mesmo com filtro mensal.")
             
     salvar_memoria(vagas_vistas_atualizadas)
     print("Varredura concluída.")
